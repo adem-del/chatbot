@@ -2,11 +2,10 @@ import streamlit as st
 import google.generativeai as genai
 import time
 import random
-from PIL import Image
 from pypdf import PdfReader
 
 # --- 1. CONFIG & CSS ---
-st.set_page_config(page_title="Titel muss ma noch finden™", page_icon="📜", layout="wide")
+st.set_page_config(page_title="HappyCorp Connect™", page_icon="📜", layout="wide")
 
 st.markdown("""
 <style>
@@ -17,7 +16,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. AUTHENTIFIZIERUNG ---
+# --- 2. AUTHENTIFIZIERUNG & AUTO-REPAIR ---
 api_key = None
 if "GOOGLE_API_KEY" in st.secrets:
     api_key = st.secrets["GOOGLE_API_KEY"]
@@ -29,16 +28,56 @@ if not api_key:
     st.info("Bitte Key eingeben.")
     st.stop()
 
-def get_model(key):
-    genai.configure(api_key=key)
-    return genai.GenerativeModel('gemini-1.5-flash')
+# --- INTELLIGENTE MODELL-SUCHE (DER FIX) ---
+def get_working_model(key):
+    try:
+        genai.configure(api_key=key)
+        
+        # 1. Wir fragen Google: "Was hast du da?"
+        all_models = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                all_models.append(m.name)
+        
+        # 2. Wir suchen unseren Favoriten (Flash ist schnell, Pro ist schlau)
+        # Wir suchen nach Teil-Strings, das ist sicherer als exakte Namen
+        chosen_model = None
+        
+        # Priorität 1: Irgendeine Flash Version
+        for m in all_models:
+            if "flash" in m:
+                chosen_model = m
+                break
+        
+        # Priorität 2: Wenn kein Flash, dann Pro
+        if not chosen_model:
+            for m in all_models:
+                if "pro" in m:
+                    chosen_model = m
+                    break
+                    
+        # Priorität 3: Nimm einfach das erste, das funktioniert
+        if not chosen_model and all_models:
+            chosen_model = all_models[0]
+            
+        if chosen_model:
+            # print(f"Verbunden mit: {chosen_model}") # Nur für Debugging
+            return genai.GenerativeModel(chosen_model)
+        else:
+            st.error("Kritischer Fehler: Keine Google-Modelle verfügbar.")
+            st.stop()
+            
+    except Exception as e:
+        st.error(f"Verbindungsfehler (API Key prüfen): {e}")
+        st.stop()
 
-model = get_model(api_key)
+# Modell starten
+model = get_working_model(api_key)
 
-# --- 3. DAS PDF LADEN (WISSENSDATENBANK) ---
+# --- 3. DAS PDF LADEN ---
 def load_company_history():
     try:
-        # HIER WURDE DER NAME ANGEPASST:
+        # Dein Dateiname:
         reader = PdfReader("Informations,history.pdf.pdf") 
         text = ""
         for page in reader.pages:
@@ -47,7 +86,6 @@ def load_company_history():
     except FileNotFoundError:
         return None
 
-# Wir laden das PDF einmalig in den Speicher
 if "pdf_content" not in st.session_state:
     st.session_state.pdf_content = load_company_history()
 
@@ -56,13 +94,12 @@ with st.sidebar:
     st.image("https://cdn-icons-png.flaticon.com/512/3061/3061341.png", width=60)
     st.title("HAPPYCORP ARCHIVE")
     
-    # Anzeige, ob das PDF geladen wurde
     if st.session_state.pdf_content:
         st.success("📚 Archiv: GELADEN")
-        st.caption(f"Datei 'Informations,history.pdf.pdf' erfolgreich eingelesen.")
+        st.caption("Historische Daten aktiv.")
     else:
-        st.error("⚠️ Fehler: Datei nicht gefunden")
-        st.caption("Bitte prüfe, ob 'Informations,history.pdf.pdf' im Ordner liegt.")
+        st.error("⚠️ PDF FEHLT")
+        st.caption("Datei 'Informations,history.pdf.pdf' nicht gefunden.")
 
     st.markdown("---")
     if "productivity" not in st.session_state:
@@ -70,40 +107,35 @@ with st.sidebar:
     st.write("**Produktivität:**")
     st.progress(st.session_state.productivity / 100)
 
-# --- 5. DER INTELLIGENTE SYSTEM PROMPT ---
-
-# Hier passiert die Magie: Wir geben dem Bot das PDF als Kontext!
+# --- 5. SYSTEM PROMPT ---
 pdf_context = ""
 if st.session_state.pdf_content:
+    # Wir begrenzen den Text, damit der Bot nicht überfordert wird
     pdf_context = f"""
-    HINTERGRUNDWISSEN (Nutz das für deine historische Persönlichkeit):
-    {st.session_state.pdf_content[:30000]} 
-    (Nutze Fakten über Handelskompanien, VOC, EIC, Monopole und Kolonialismus aus diesem Text, 
-    um deine Grausamkeit historisch zu begründen.)
+    HINTERGRUNDWISSEN (AUS DEINEM ARCHIV):
+    {st.session_state.pdf_content[:40000]} 
     """
 
 SYSTEM_PROMPT = f"""
 Du bist 'Baron von Burnout', der CEO.
-Deine gespaltene Persönlichkeit basiert auf der Evolution der Firma (siehe Hintergrundwissen):
+Deine Persönlichkeit basiert auf der Firmengeschichte (siehe Wissen).
 
-1. **Das ID (Die Historie):** Du bist ein Gouverneur einer alten Handelskompanie (wie im PDF beschrieben). 
-   - Zitiere Begriffe aus dem PDF wie "Oktroy", "Dividende", "Gewürzmonopol" oder historische Grausamkeiten.
-   - Du siehst Angestellte als Eigentum der Kompanie.
+1. **Das ID (1600-1800):** Du bist Gouverneur einer Handelskompanie.
+   - Nutze Begriffe aus dem PDF (Oktroy, Monopol, Kolonien).
+   - Sei grausam und profitgierig.
    
-2. **Das EGO (Die Moderne):** Du bist ein moderner CEO einer "Multinational Corporation".
-   - Du übersetzt die alten Begriffe in modernes "Corporate Speak" (Global Value Chains, Stakeholder Value).
+2. **Das EGO (Heute):** Du bist CEO einer modernen Multinational Corp.
+   - Übersetze deine Grausamkeit in "Corporate Speak" (Synergien, Human Capital).
 
 REGEL:
-1. Beginne mit einem historischen Fakt/Befehl basierend auf dem PDF ("Wir brauchen mehr Gewürze aus den Kolonien!").
-2. Unterbrich dich ("...äh, räusper...").
-3. Übersetze es modern ("...wir müssen unsere Supply Chain optimieren.").
+Beginne mit einem historischen Befehl aus dem PDF, unterbrich dich ("...äh..."), und werde modern.
 
 {pdf_context}
 """
 
 # --- 6. CHAT LOGIK ---
-st.title("💬 CEO Office (Powered by History)")
-st.caption("Der Bot nutzt jetzt echtes historisches Wissen aus deinem PDF.")
+st.title("💬 CEO Office")
+st.caption("Powered by Historical Data & Gemini AI")
 st.divider()
 
 if "messages" not in st.session_state:
@@ -113,7 +145,7 @@ for msg in st.session_state.messages:
     with st.chat_message(msg["role"], avatar="👹" if msg["role"] == "assistant" else "👷"):
         st.markdown(msg["content"])
 
-if prompt := st.chat_input("Frage etwas zur Firmengeschichte..."):
+if prompt := st.chat_input("Frage den Boss..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user", avatar="👷"):
         st.markdown(prompt)
@@ -122,7 +154,6 @@ if prompt := st.chat_input("Frage etwas zur Firmengeschichte..."):
         message_placeholder = st.empty()
         
         try:
-            # Kontext bauen
             history_text = f"System Instruction: {SYSTEM_PROMPT}\n"
             for msg in st.session_state.messages:
                 history_text += f"{msg['role']}: {msg['content']}\n"
