@@ -3,10 +3,10 @@ import google.generativeai as genai
 import time
 import random
 from PIL import Image
-from pypdf import PdfReader # NEU: Für das PDF
+from pypdf import PdfReader
 
 # --- 1. CONFIG & CSS ---
-st.set_page_config(page_title="titel muss ma noch finden™", page_icon="📜", layout="wide")
+st.set_page_config(page_title="Titel muss ma noch finden™", page_icon="📜", layout="wide")
 
 st.markdown("""
 <style>
@@ -38,6 +38,7 @@ model = get_model(api_key)
 # --- 3. DAS PDF LADEN (WISSENSDATENBANK) ---
 def load_company_history():
     try:
+        # HIER WURDE DER NAME ANGEPASST:
         reader = PdfReader("Informations,history.pdf.pdf") 
         text = ""
         for page in reader.pages:
@@ -57,10 +58,11 @@ with st.sidebar:
     
     # Anzeige, ob das PDF geladen wurde
     if st.session_state.pdf_content:
-        st.success("📚 Historisches Archiv: GELADEN")
-        st.caption("Der CEO hat Zugriff auf 400 Jahre Firmengeschichte.")
+        st.success("📚 Archiv: GELADEN")
+        st.caption(f"Datei 'Informations,history.pdf.pdf' erfolgreich eingelesen.")
     else:
-        st.warning("⚠️ Archiv nicht gefunden (history.pdf fehlt)")
+        st.error("⚠️ Fehler: Datei nicht gefunden")
+        st.caption("Bitte prüfe, ob 'Informations,history.pdf.pdf' im Ordner liegt.")
 
     st.markdown("---")
     if "productivity" not in st.session_state:
@@ -79,8 +81,6 @@ if st.session_state.pdf_content:
     (Nutze Fakten über Handelskompanien, VOC, EIC, Monopole und Kolonialismus aus diesem Text, 
     um deine Grausamkeit historisch zu begründen.)
     """
-    # Hinweis: [:30000] begrenzt den Text, falls das PDF riesig ist, 
-    # aber Gemini Flash schafft locker ganze Bücher.
 
 SYSTEM_PROMPT = f"""
 Du bist 'Baron von Burnout', der CEO.
@@ -142,5 +142,3 @@ if prompt := st.chat_input("Frage etwas zur Firmengeschichte..."):
 
         except Exception as e:
             st.error(f"Fehler: {e}")
-
-
