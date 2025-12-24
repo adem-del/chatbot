@@ -6,7 +6,7 @@ from PIL import Image
 from pypdf import PdfReader # NEU: Für das PDF
 
 # --- 1. CONFIG & CSS ---
-st.set_page_config(page_title="HappyCorp Connect™", page_icon="📜", layout="wide")
+st.set_page_config(page_title="titel muss ma noch finden™", page_icon="📜", layout="wide")
 
 st.markdown("""
 <style>
@@ -142,4 +142,5 @@ if prompt := st.chat_input("Frage etwas zur Firmengeschichte..."):
 
         except Exception as e:
             st.error(f"Fehler: {e}")
+
 
