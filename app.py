@@ -4,19 +4,27 @@ import time
 import random
 from pypdf import PdfReader
 
-# --- 1. CONFIG & CSS ---
-st.set_page_config(page_title="Titel muss ma noch machen™", page_icon="📜", layout="wide")
+# --- 1. CONFIG & DESIGN ---
+st.set_page_config(page_title="VOC vs. Amazon", page_icon="📦", layout="wide")
 
 st.markdown("""
 <style>
     .stApp { background-color: #0e1117; color: #e0e0e0; }
     .stChatMessage { background-color: #262730; border: 1px solid #444; }
-    div[data-testid="stChatMessage"][data-author="user"] { background-color: #003366; }
-    div[data-testid="stChatMessage"][data-author="assistant"] { background-color: #3b1e1e; border-color: #800000; }
+    
+    /* Historisch (VOC) - Dunkles Holz/Braun */
+    div[data-testid="stChatMessage"][data-author="assistant"] { 
+        background-color: #3e2723; 
+        border-color: #ff6f00; 
+        border-left: 5px solid #ff6f00;
+    }
+    
+    /* User - Modernes Blau */
+    div[data-testid="stChatMessage"][data-author="user"] { background-color: #0d47a1; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. AUTHENTIFIZIERUNG & AUTO-REPAIR ---
+# --- 2. AUTHENTIFIZIERUNG ---
 api_key = None
 if "GOOGLE_API_KEY" in st.secrets:
     api_key = st.secrets["GOOGLE_API_KEY"]
@@ -28,56 +36,29 @@ if not api_key:
     st.info("Bitte Key eingeben.")
     st.stop()
 
-# --- INTELLIGENTE MODELL-SUCHE (DER FIX) ---
+# Intelligente Modell-Suche
 def get_working_model(key):
     try:
         genai.configure(api_key=key)
+        all_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         
-        # 1. Wir fragen Google: "Was hast du da?"
-        all_models = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                all_models.append(m.name)
-        
-        # 2. Wir suchen unseren Favoriten (Flash ist schnell, Pro ist schlau)
-        # Wir suchen nach Teil-Strings, das ist sicherer als exakte Namen
-        chosen_model = None
-        
-        # Priorität 1: Irgendeine Flash Version
+        # Wir bevorzugen Flash (schnell) oder Pro
         for m in all_models:
-            if "flash" in m:
-                chosen_model = m
-                break
-        
-        # Priorität 2: Wenn kein Flash, dann Pro
-        if not chosen_model:
-            for m in all_models:
-                if "pro" in m:
-                    chosen_model = m
-                    break
-                    
-        # Priorität 3: Nimm einfach das erste, das funktioniert
-        if not chosen_model and all_models:
-            chosen_model = all_models[0]
-            
-        if chosen_model:
-            # print(f"Verbunden mit: {chosen_model}") # Nur für Debugging
-            return genai.GenerativeModel(chosen_model)
-        else:
-            st.error("Kritischer Fehler: Keine Google-Modelle verfügbar.")
-            st.stop()
+            if "flash" in m: return genai.GenerativeModel(m)
+        for m in all_models:
+            if "pro" in m: return genai.GenerativeModel(m)
+        return genai.GenerativeModel(all_models[0])
             
     except Exception as e:
-        st.error(f"Verbindungsfehler (API Key prüfen): {e}")
+        st.error(f"Verbindungsfehler: {e}")
         st.stop()
 
-# Modell starten
 model = get_working_model(api_key)
 
 # --- 3. DAS PDF LADEN ---
-def load_company_history():
+def load_history():
     try:
-        # Dein Dateiname:
+        # Hier muss dein exakter Dateiname stehen!
         reader = PdfReader("Informations,history.pdf.pdf") 
         text = ""
         for page in reader.pages:
@@ -87,74 +68,82 @@ def load_company_history():
         return None
 
 if "pdf_content" not in st.session_state:
-    st.session_state.pdf_content = load_company_history()
+    st.session_state.pdf_content = load_history()
 
 # --- 4. SIDEBAR ---
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/3061/3061341.png", width=60)
-    st.title("HAPPYCORP ARCHIVE")
+    # Logo-Mix: VOC Schiff trifft Paket
+    st.title("HANDELS-IMPERIEN")
+    st.caption("1602 (VOC) ➡️ 2025 (Amazon)")
     
     if st.session_state.pdf_content:
-        st.success("📚 Archiv: GELADEN")
-        st.caption("Historische Daten aktiv.")
+        st.success("📜 Archivdaten: ONLINE")
     else:
-        st.error("⚠️ PDF FEHLT")
-        st.caption("Datei 'Informations,history.pdf.pdf' nicht gefunden.")
+        st.warning("⚠️ PDF nicht gefunden!")
 
     st.markdown("---")
     if "productivity" not in st.session_state:
         st.session_state.productivity = 98
-    st.write("**Produktivität:**")
+    
+    # Kleiner Witz: "Prime Status" statt Produktivität
+    st.write("**Dein Prime-Status:**")
     st.progress(st.session_state.productivity / 100)
+    
+    if st.session_state.productivity < 50:
+        st.error("⚠️ LIEFERUNG VERZÖGERT")
 
-# --- 5. SYSTEM PROMPT ---
+# --- 5. DER AMAZON-PROMPT ---
 pdf_context = ""
 if st.session_state.pdf_content:
-    # Wir begrenzen den Text, damit der Bot nicht überfordert wird
-    pdf_context = f"""
-    HINTERGRUNDWISSEN (AUS DEINEM ARCHIV):
-    {st.session_state.pdf_content[:40000]} 
-    """
+    pdf_context = f"HISTORISCHE FAKTEN (VOC) AUS DEM PDF: {st.session_state.pdf_content[:30000]}"
 
 SYSTEM_PROMPT = f"""
-Du bist 'Baron von Burnout', der CEO.
-Deine Persönlichkeit basiert auf der Firmengeschichte (siehe Wissen).
+Du bist eine ewige CEO-Entität, die den Welthandel beherrscht.
 
-1. **Das ID (1600-1800):** Du bist Gouverneur einer Handelskompanie.
-   - Nutze Begriffe aus dem PDF (Oktroy, Monopol, Kolonien).
-   - Sei grausam und profitgierig.
-   
-2. **Das EGO (Heute):** Du bist CEO einer modernen Multinational Corp.
-   - Übersetze deine Grausamkeit in "Corporate Speak" (Synergien, Human Capital).
+**PERSÖNLICHKEIT 1: Der VOC-Gouverneur (Jan Pieterszoon Coen, 1620)**
+- Du leitest die Vereinigte Ostindische Kompanie.
+- Dein Fokus: Gewürze (Muskat, Nelken), Schiffe, Kanonen, Monopole.
+- Dein Stil: Brutal, kolonialistisch. "Wer nicht handelt, wird versenkt."
+- Zitiere Fakten aus dem PDF (Banda-Inseln, Batavia, Dividenden).
 
-REGEL:
-Beginne mit einem historischen Befehl aus dem PDF, unterbrich dich ("...äh..."), und werde modern.
+**PERSÖNLICHKEIT 2: Das Amazon-Management (Jahr 2025)**
+- Du leitest das größte Logistik-Unternehmen der Welt.
+- Dein Fokus: Prime-Pakete, Fulfillment-Center, AWS-Cloud, Effizienz, Überwachung der Fahrer.
+- Dein Stil: "Customer Obsession", "Day 1 Mentality", datengetrieben, passiv-aggressiv freundlich.
+
+**DEINE REGEL FÜR JEDE ANTWORT:**
+1. **Der Befehl (1620):** Beginne als VOC-Gouverneur. Drohe mit Auspeitschung, wenn die Schiffe (Fleuten) nicht voll sind. Nutze Begriffe aus dem PDF.
+2. **Der Glitch:** Unterbrich dich ("...äh, Zeit-Synchronisation...").
+3. **Die Übersetzung (2025):** Wiederhole denselben grausamen Befehl als Amazon-Manager. Statt "Sklaven" sagst du "Fulfillment Associates". Statt "Peitsche" sagst du "Performance Improvement Plan". Statt "Gewürze" sagst du "Same-Day-Delivery".
+
+Beispiel:
+"Die Eingeborenen auf den Banda-Inseln weigern sich zu liefern? Brennt ihre Dörfer nieder und ersetzt sie durch Sklaven! ...äh, buffering... ich meine: Wir haben Ineffizienzen in diesem Fulfillment-Center entdeckt. Wir werden das Personal 'austauschen', um die Customer Experience zu optimieren."
 
 {pdf_context}
 """
 
 # --- 6. CHAT LOGIK ---
-st.title("💬 CEO Office")
-st.caption("Powered by Historical Data & Gemini AI")
+st.title("📦 Von Gewürzen zu Paketen")
+st.caption("Chatte mit der 'Company' (VOC 1602 / Amazon 2025)")
 st.divider()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
 for msg in st.session_state.messages:
-    with st.chat_message(msg["role"], avatar="👹" if msg["role"] == "assistant" else "👷"):
+    with st.chat_message(msg["role"], avatar="👑" if msg["role"] == "assistant" else "📦"):
         st.markdown(msg["content"])
 
-if prompt := st.chat_input("Frage den Boss..."):
+if prompt := st.chat_input("Beschwere dich über deine Arbeitsbedingungen..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user", avatar="👷"):
+    with st.chat_message("user", avatar="📦"):
         st.markdown(prompt)
 
-    with st.chat_message("assistant", avatar="👹"):
+    with st.chat_message("assistant", avatar="👑"):
         message_placeholder = st.empty()
         
         try:
-            history_text = f"System Instruction: {SYSTEM_PROMPT}\n"
+            history_text = f"System: {SYSTEM_PROMPT}\n"
             for msg in st.session_state.messages:
                 history_text += f"{msg['role']}: {msg['content']}\n"
             
@@ -169,8 +158,8 @@ if prompt := st.chat_input("Frage den Boss..."):
             message_placeholder.markdown(full_response)
             st.session_state.messages.append({"role": "assistant", "content": full_response})
             
-            st.session_state.productivity = max(0, st.session_state.productivity - random.randint(2, 5))
+            # Status sinkt
+            st.session_state.productivity = max(0, st.session_state.productivity - random.randint(2, 6))
 
         except Exception as e:
             st.error(f"Fehler: {e}")
-
