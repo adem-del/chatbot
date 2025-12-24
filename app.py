@@ -38,8 +38,7 @@ model = get_model(api_key)
 # --- 3. DAS PDF LADEN (WISSENSDATENBANK) ---
 def load_company_history():
     try:
-        # Hier muss der exakte Name deiner Datei stehen!
-        reader = PdfReader("history.pdf") 
+        reader = PdfReader("Informations,history.pdf.pdf") 
         text = ""
         for page in reader.pages:
             text += page.extract_text()
@@ -143,3 +142,4 @@ if prompt := st.chat_input("Frage etwas zur Firmengeschichte..."):
 
         except Exception as e:
             st.error(f"Fehler: {e}")
+
