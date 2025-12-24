@@ -5,7 +5,7 @@ import random
 from pypdf import PdfReader
 
 # --- 1. CONFIG & CSS ---
-st.set_page_config(page_title="HappyCorp Connect™", page_icon="📜", layout="wide")
+st.set_page_config(page_title="Titel muss ma noch machen™", page_icon="📜", layout="wide")
 
 st.markdown("""
 <style>
@@ -173,3 +173,4 @@ if prompt := st.chat_input("Frage den Boss..."):
 
         except Exception as e:
             st.error(f"Fehler: {e}")
+
