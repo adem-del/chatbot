@@ -123,7 +123,7 @@ Beispiel:
 """
 
 # --- 6. CHAT LOGIK ---
-st.title("📦 Von Gewürzen zu Paketen")
+st.title("📦 Von Handleskompanie zu multinational Corporations")
 st.caption("Chatte mit der 'Company' (VOC 1602 / Amazon 2025)")
 st.divider()
 
@@ -163,3 +163,4 @@ if prompt := st.chat_input("Beschwere dich über deine Arbeitsbedingungen..."):
 
         except Exception as e:
             st.error(f"Fehler: {e}")
+
