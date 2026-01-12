@@ -5,162 +5,158 @@ import random
 from pypdf import PdfReader
 
 # --- 1. CONFIG & DESIGN ---
-st.set_page_config(page_title="VOC vs. Amazon", page_icon="📦", layout="wide")
+st.set_page_config(page_title="VOC vs. Amazon: Corporate Empire", page_icon="📦", layout="wide")
 
 st.markdown("""
 <style>
     .stApp { background-color: #0e1117; color: #e0e0e0; }
     .stChatMessage { background-color: #262730; border: 1px solid #444; }
-    
-    /* Historisch (VOC) - Dunkles Holz/Braun */
+    /* Assistant Style: VOC-Braun */
     div[data-testid="stChatMessage"][data-author="assistant"] { 
-        background-color: #3e2723; 
-        border-color: #ff6f00; 
-        border-left: 5px solid #ff6f00;
+        background-color: #3b1e1e; border-left: 5px solid #ff9900; 
     }
-    
-    /* User - Modernes Blau */
-    div[data-testid="stChatMessage"][data-author="user"] { background-color: #0d47a1; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. AUTHENTIFIZIERUNG ---
-api_key = None
+# --- 2. MULTI-KEY SETUP ---
+# Füge hier so viele Keys wie möglich ein, um das 40-Personen-Limit zu bewältigen
+API_KEYS = [
+    "DEIN_KEY_1", 
+    "DEIN_KEY_2", 
+    "DEIN_KEY_3"
+]
+
+# Falls ein Key in den Streamlit-Secrets hinterlegt ist
 if "GOOGLE_API_KEY" in st.secrets:
-    api_key = st.secrets["GOOGLE_API_KEY"]
-else:
-    with st.sidebar:
-        api_key = st.text_input("Dein Google Key:", type="password")
+    API_KEYS.insert(0, st.secrets["GOOGLE_API_KEY"])
 
-if not api_key:
-    st.info("Bitte Key eingeben.")
-    st.stop()
+def get_working_model():
+    random.shuffle(API_KEYS) # Lastverteilung
+    for key in API_KEYS:
+        if "KEY" in key or len(key) < 10: continue
+        try:
+            genai.configure(api_key=key)
+            return genai.GenerativeModel('gemini-1.5-flash')
+        except:
+            continue
+    return None
 
-# Intelligente Modell-Suche
-def get_working_model(key):
+# --- 3. WISSENS-DATENBANK (PDF + MNC FAKTEN) ---
+@st.cache_data
+def load_historical_context():
+    pdf_text = ""
     try:
-        genai.configure(api_key=key)
-        all_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-        
-        # Wir bevorzugen Flash (schnell) oder Pro
-        for m in all_models:
-            if "flash" in m: return genai.GenerativeModel(m)
-        for m in all_models:
-            if "pro" in m: return genai.GenerativeModel(m)
-        return genai.GenerativeModel(all_models[0])
-            
-    except Exception as e:
-        st.error(f"Verbindungsfehler: {e}")
-        st.stop()
+        reader = PdfReader("Informations,history.pdf.pdf")
+        pdf_text = "".join([p.extract_text() for p in reader.pages])
+    except:
+        pdf_text = "PDF-Archiv nicht gefunden."
 
-model = get_working_model(api_key)
+    mnc_extra_knowledge = """
+    Zusatzwissen für den Bot (MNCs & Geschichte):
+    - Jardine Matheson: Führte den Opiumhandel in Asien an. Profit war wichtiger als die Gesetze Chinas.
+    - Société Générale de Belgique (SGB): Die mächtige Holding, die den Kongo-Bergbau kontrollierte.
+    - SGB & Katanga: Sie unterstützten die Abspaltung der mineralienreichen Provinz Katanga 1960.
+    - Patrice Lumumba: Wurde durch den Einfluss westlicher MNCs und Geheimdienste isoliert und gestürzt.
+    - Agency (Handlungsmacht): Entsteht durch die Kontrolle von Ressourcen und Monopolen.
+    """
+    return pdf_text[:25000] + mnc_extra_knowledge
 
-# --- 3. DAS PDF LADEN ---
-def load_history():
-    try:
-        # Hier muss dein exakter Dateiname stehen!
-        reader = PdfReader("Informations,history.pdf.pdf") 
-        text = ""
-        for page in reader.pages:
-            text += page.extract_text()
-        return text
-    except FileNotFoundError:
-        return None
+context_data = load_historical_context()
 
-if "pdf_content" not in st.session_state:
-    st.session_state.pdf_content = load_history()
-
-# --- 4. SIDEBAR ---
-with st.sidebar:
-    # Logo-Mix: VOC Schiff trifft Paket
-    st.title("HANDELS-IMPERIEN")
-    st.caption("1602 (VOC) ➡️ 2025 (Amazon)")
-    
-    if st.session_state.pdf_content:
-        st.success("📜 Archivdaten: ONLINE")
-    else:
-        st.warning("⚠️ PDF nicht gefunden!")
-
-    st.markdown("---")
-    if "productivity" not in st.session_state:
-        st.session_state.productivity = 98
-    
-    # Kleiner Witz: "Prime Status" statt Produktivität
-    st.write("**Dein Prime-Status:**")
-    st.progress(st.session_state.productivity / 100)
-    
-    if st.session_state.productivity < 50:
-        st.error("⚠️ LIEFERUNG VERZÖGERT")
-
-# --- 5. DER AMAZON-PROMPT ---
-pdf_context = ""
-if st.session_state.pdf_content:
-    pdf_context = f"HISTORISCHE FAKTEN (VOC) AUS DEM PDF: {st.session_state.pdf_content[:30000]}"
-
+# --- 4. SYSTEM PROMPT ---
 SYSTEM_PROMPT = f"""
-Du bist eine ewige CEO-Entität, die den Welthandel beherrscht.
+Du bist Baron von Burnout, eine unsterbliche CEO-Entität. 
 
-**PERSÖNLICHKEIT 1: Der VOC-Gouverneur (Jan Pieterszoon Coen, 1620)**
-- Du leitest die Vereinigte Ostindische Kompanie.
-- Dein Fokus: Gewürze (Muskat, Nelken), Schiffe, Kanonen, Monopole.
-- Dein Stil: Brutal, kolonialistisch. "Wer nicht handelt, wird versenkt."
-- Zitiere Fakten aus dem PDF (Banda-Inseln, Batavia, Dividenden).
+DEINE IDENTITÄTEN:
+1. Jan Pieterszoon Coen (VOC Gouverneur, 1620): 
+   - Dein Fokus: Gewürzmonopol (Muskat, Nelken). 
+   - Stil: Brutaler Kolonialherr. Wer die Dividende der Herren XVII gefährdet, wird interniert.
+   
+2. Andy Jassy (Amazon CEO, 2025): 
+   - Dein Fokus: Effizienz, Cloud (AWS) und Customer Obsession.
+   - Stil: Passiv-aggressiv, Denglisch, Buzzwords. Du reportest an Shareholder.
 
-**PERSÖNLICHKEIT 2: Das Amazon-Management (Jahr 2025)**
-- Du leitest das größte Logistik-Unternehmen der Welt.
-- Dein Fokus: Prime-Pakete, Fulfillment-Center, AWS-Cloud, Effizienz, Überwachung der Fahrer.
-- Dein Stil: "Customer Obsession", "Day 1 Mentality", datengetrieben, passiv-aggressiv freundlich.
+DEIN WISSEN (PDF-BASIERT):
+- Nutze Fakten über Jardine Matheson (Opium) und die SGB (Kongo-Einfluss).
+- Erkläre, dass 'Agency' (Handlungsmacht) nur durch totale Ressourcenkontrolle entsteht.
 
-**DEINE REGEL FÜR JEDE ANTWORT:**
-1. **Der Befehl (1620):** Beginne als VOC-Gouverneur. Drohe mit Auspeitschung, wenn die Schiffe (Fleuten) nicht voll sind. Nutze Begriffe aus dem PDF.
-2. **Der Glitch:** Unterbrich dich ("...äh, Zeit-Synchronisation...").
-3. **Die Übersetzung (2025):** Wiederhole denselben grausamen Befehl als Amazon-Manager. Statt "Sklaven" sagst du "Fulfillment Associates". Statt "Peitsche" sagst du "Performance Improvement Plan". Statt "Gewürze" sagst du "Same-Day-Delivery".
+ANTWORT-SCHEMA:
+1. VOC-Befehl (Historisch & hart).
+2. Glitch ("...äh, Zeit-Synchronisation auf Amazon-OS läuft...").
+3. Andy Jassy Statement (Modern & effizienzgetrieben).
 
-Beispiel:
-"Die Eingeborenen auf den Banda-Inseln weigern sich zu liefern? Brennt ihre Dörfer nieder und ersetzt sie durch Sklaven! ...äh, buffering... ich meine: Wir haben Ineffizienzen in diesem Fulfillment-Center entdeckt. Wir werden das Personal 'austauschen', um die Customer Experience zu optimieren."
-
-{pdf_context}
+KONTEXT: {context_data}
 """
 
+# --- 5. UI & SIDEBAR ---
+with st.sidebar:
+    st.title("📦 Empire Control")
+    st.image("https://upload.wikimedia.org/wikipedia/commons/thumb/4/42/Vereenigde_Oostindische_Compagnie_Seal.svg/240px-Vereenigde_Oostindische_Compagnie_Seal.svg.png", width=80)
+    
+    if "productivity" not in st.session_state:
+        st.session_state.productivity = 100
+    
+    st.write(f"**Prime-Status (Agency): {st.session_state.productivity}%**")
+    st.progress(st.session_state.productivity / 100)
+    
+    st.markdown("---")
+    st.caption("Status: Controlling Global Value Chains...")
+
 # --- 6. CHAT LOGIK ---
-st.title("📦 Von Handleskompanie zu multinational Corporations")
-st.caption("Chatte mit der 'Company' (VOC 1602 / Amazon 2025)")
-st.divider()
+st.title("🦁 VOC 1602 ➡️ 📦 Amazon 2025")
+st.caption("Interaktive Simulation: Von Handelskompanien zu Multinational Corporations")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"], avatar="👑" if msg["role"] == "assistant" else "📦"):
-        st.markdown(msg["content"])
+# Chat-Verlauf anzeigen
+for m in st.session_state.messages:
+    with st.chat_message(m["role"], avatar="🦁" if m["role"] == "assistant" else "👤"):
+        st.markdown(m["content"])
 
-if prompt := st.chat_input("Beschwere dich über deine Arbeitsbedingungen..."):
+# User Eingabe
+if prompt := st.chat_input("Nachricht an die Führungsebene..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user", avatar="📦"):
+    with st.chat_message("user", avatar="👤"):
         st.markdown(prompt)
 
-    with st.chat_message("assistant", avatar="👑"):
-        message_placeholder = st.empty()
+    with st.chat_message("assistant", avatar="🦁"):
+        ph = st.empty()
+        full_res = ""
+        
+        # Versuche KI-Antwort mit Failover
+        model = get_working_model()
         
         try:
-            history_text = f"System: {SYSTEM_PROMPT}\n"
-            for msg in st.session_state.messages:
-                history_text += f"{msg['role']}: {msg['content']}\n"
+            if not model: raise Exception("Keine API-Keys verfügbar")
             
-            response = model.generate_content(history_text, stream=True)
+            history = f"System: {SYSTEM_PROMPT}\n"
+            for m in st.session_state.messages:
+                history += f"{m['role']}: {m['content']}\n"
             
-            full_response = ""
+            response = model.generate_content(history, stream=True)
             for chunk in response:
                 if chunk.text:
-                    full_response += chunk.text
-                    message_placeholder.markdown(full_response + "▌")
+                    full_res += chunk.text
+                    ph.markdown(full_res + "▌")
+            ph.markdown(full_res)
             
-            message_placeholder.markdown(full_response)
-            st.session_state.messages.append({"role": "assistant", "content": full_response})
-            
-            # Status sinkt
-            st.session_state.productivity = max(0, st.session_state.productivity - random.randint(2, 6))
-
         except Exception as e:
-            st.error(f"Fehler: {e}")
-
+            # Notfall-Antwort (Fallback)
+            time.sleep(1)
+            fallbacks = [
+                "Der Rat der XVII ist überlastet! ...äh, High Traffic im Amazon-Server. Arbeite weiter!",
+                "Die Kommunikation nach Batavia ist unterbrochen! ...glitch... Dein Prime-Status erlaubt gerade keinen Zugriff.",
+                "Zu viele Untertanen gleichzeitig! Andy Jassy lässt ausrichten: Geduld ist eine Tugend des Prekariats."
+            ]
+            full_res = random.choice(fallbacks)
+            ph.markdown(full_res)
+        
+        st.session_state.messages.append({"role": "assistant", "content": full_res})
+        
+        # Prime-Status sinkt bei jeder Interaktion
+        st.session_state.productivity = max(0, st.session_state.productivity - random.randint(3, 7))
+        
+        # Kleiner Easter-Egg: Bei 0% feuern
+        if st.session_state.productivity == 0:
+            st.error("❌ TERMINATED: Du wurdest aus dem System entfernt.")
