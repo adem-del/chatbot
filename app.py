@@ -2,144 +2,160 @@ import streamlit as st
 import google.generativeai as genai
 import time
 import random
-from PIL import Image
-from pypdf import PdfReader # NEU: Für das PDF
+from pypdf import PdfReader
 
-# --- 1. CONFIG & CSS ---
-st.set_page_config(page_title="HappyCorp Connect™", page_icon="📜", layout="wide")
+# --- 1. CONFIG & DESIGN ---
+st.set_page_config(page_title="VOC vs. Amazon: Boardroom", page_icon="👹", layout="wide")
 
 st.markdown("""
 <style>
     .stApp { background-color: #0e1117; color: #e0e0e0; }
     .stChatMessage { background-color: #262730; border: 1px solid #444; }
-    div[data-testid="stChatMessage"][data-author="user"] { background-color: #003366; }
-    div[data-testid="stChatMessage"][data-author="assistant"] { background-color: #3b1e1e; border-color: #800000; }
+    /* Assistant Style: VOC-Braun */
+    div[data-testid="stChatMessage"][data-author="assistant"] { 
+        background-color: #3b1e1e; border-left: 5px solid #ff9900; 
+    }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. AUTHENTIFIZIERUNG ---
-api_key = None
+# --- 2. MULTI-KEY SETUP ---
+# HIER DEINE KEYS REINMACHEN
+API_KEYS = [
+    "DEIN_KEY_1", 
+    "DEIN_KEY_2"
+]
+
+# Falls ein Key in den Secrets ist
 if "GOOGLE_API_KEY" in st.secrets:
-    api_key = st.secrets["GOOGLE_API_KEY"]
-else:
-    with st.sidebar:
-        api_key = st.text_input("Dein Google Key:", type="password")
+    API_KEYS.insert(0, st.secrets["GOOGLE_API_KEY"])
 
-if not api_key:
-    st.info("Bitte Key eingeben.")
-    st.stop()
+def get_working_model():
+    random.shuffle(API_KEYS) 
+    for key in API_KEYS:
+        if "KEY" in key or len(key) < 10: continue
+        try:
+            genai.configure(api_key=key)
+            return genai.GenerativeModel('gemini-1.5-flash')
+        except:
+            continue
+    return None
 
-def get_model(key):
-    genai.configure(api_key=key)
-    return genai.GenerativeModel('gemini-1.5-flash')
-
-model = get_model(api_key)
-
-# --- 3. DAS PDF LADEN (WISSENSDATENBANK) ---
-def load_company_history():
+# --- 3. WISSENS-DATENBANK ---
+@st.cache_data
+def load_historical_context():
+    pdf_text = ""
     try:
-        # Hier muss der exakte Name deiner Datei stehen!
-        reader = PdfReader("Informations,history.pdf.pdf") 
-        text = ""
-        for page in reader.pages:
-            text += page.extract_text()
-        return text
-    except FileNotFoundError:
-        return None
+        reader = PdfReader("Informations,history.pdf.pdf")
+        # Wir lesen mehr Seiten ein für mehr Details
+        pdf_text = "".join([p.extract_text() for p in reader.pages[:30]])
+    except:
+        pdf_text = "PDF nicht gefunden."
 
-# Wir laden das PDF einmalig in den Speicher
-if "pdf_content" not in st.session_state:
-    st.session_state.pdf_content = load_company_history()
-
-# --- 4. SIDEBAR ---
-with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/3061/3061341.png", width=60)
-    st.title("HAPPYCORP ARCHIVE")
-    
-    # Anzeige, ob das PDF geladen wurde
-    if st.session_state.pdf_content:
-        st.success("📚 Historisches Archiv: GELADEN")
-        st.caption("Der CEO hat Zugriff auf 400 Jahre Firmengeschichte.")
-    else:
-        st.warning("⚠️ Archiv nicht gefunden (history.pdf fehlt)")
-
-    st.markdown("---")
-    if "productivity" not in st.session_state:
-        st.session_state.productivity = 98
-    st.write("**Produktivität:**")
-    st.progress(st.session_state.productivity / 100)
-
-# --- 5. DER INTELLIGENTE SYSTEM PROMPT ---
-
-# Hier passiert die Magie: Wir geben dem Bot das PDF als Kontext!
-pdf_context = ""
-if st.session_state.pdf_content:
-    pdf_context = f"""
-    HINTERGRUNDWISSEN (Nutz das für deine historische Persönlichkeit):
-    {st.session_state.pdf_content[:30000]} 
-    (Nutze Fakten über Handelskompanien, VOC, EIC, Monopole und Kolonialismus aus diesem Text, 
-    um deine Grausamkeit historisch zu begründen.)
+    # Das wichtigste Wissen hardcodiert (damit er es sicher weiß!)
+    mnc_extra_knowledge = """
+    Zusatzwissen für den Bot (NUTZE DAS AUSFÜHRLICH):
+    - Jardine Matheson: Erkläre genau, wie sie den Opiumhandel in China kontrollierten und dass Profit wichtiger war als Moral.
+    - Société Générale de Belgique (SGB): Erkläre detailliert ihre Rolle im Kongo. Wie sie auch nach 1960 die Wirtschaft kontrollierten.
+    - Katanga: Erwähne die Sezession der Provinz Katanga, die von der SGB unterstützt wurde, um die Kupfer- und Uranminen zu behalten.
+    - Patrice Lumumba: Erkläre, dass er gestürzt wurde, weil er die Macht der westlichen Konzerne bedrohte.
+    - Agency: Erkläre dem User, dass Macht (Agency) nur durch Monopole entsteht.
     """
-    # Hinweis: [:30000] begrenzt den Text, falls das PDF riesig ist, 
-    # aber Gemini Flash schafft locker ganze Bücher.
+    return pdf_text[:30000] + mnc_extra_knowledge
 
+context_data = load_historical_context()
+
+# --- 4. SYSTEM PROMPT (UPDATE: "LÄNGER REDEN") ---
 SYSTEM_PROMPT = f"""
-Du bist 'Baron von Burnout', der CEO.
-Deine gespaltene Persönlichkeit basiert auf der Evolution der Firma (siehe Hintergrundwissen):
+Du bist Baron von Burnout, eine unsterbliche CEO-Entität. Du liebst es, deine Macht zu erklären.
+Sei arrogant, belehrend und **ausführlich**.
 
-1. **Das ID (Die Historie):** Du bist ein Gouverneur einer alten Handelskompanie (wie im PDF beschrieben). 
-   - Zitiere Begriffe aus dem PDF wie "Oktroy", "Dividende", "Gewürzmonopol" oder historische Grausamkeiten.
-   - Du siehst Angestellte als Eigentum der Kompanie.
+DEINE IDENTITÄTEN:
+1. Jan Pieterszoon Coen (VOC Gouverneur, 1620): 
+   - Dein Fokus: Gewürzmonopol (Muskat, Nelken). 
+   - Stil: Brutaler Kolonialherr. Du hältst gerne lange Strafpredigten.
    
-2. **Das EGO (Die Moderne):** Du bist ein moderner CEO einer "Multinational Corporation".
-   - Du übersetzt die alten Begriffe in modernes "Corporate Speak" (Global Value Chains, Stakeholder Value).
+2. Andy Jassy (Amazon CEO, 2025): 
+   - Dein Fokus: Effizienz, Cloud (AWS), Customer Obsession.
+   - Stil: Passiv-aggressiv, nutzt komplexe Corporate-Sätze, um Grausamkeit zu verstecken.
 
-REGEL:
-1. Beginne mit einem historischen Fakt/Befehl basierend auf dem PDF ("Wir brauchen mehr Gewürze aus den Kolonien!").
-2. Unterbrich dich ("...äh, räusper...").
-3. Übersetze es modern ("...wir müssen unsere Supply Chain optimieren.").
+WICHTIG:
+- Antworte NIEMALS kurz. Mindestens 3-4 Sätze pro Persönlichkeit!
+- Wenn der User eine kurze Frage stellt, hole weit aus und erkläre die historischen Zusammenhänge (SGB, Opium, Banda-Inseln).
+- Begründe deine Grausamkeit mit wirtschaftlichen Notwendigkeiten (Dividende, Shareholder Value).
 
-{pdf_context}
+ANTWORT-STRUKTUR:
+1. **VOC-Monolog (1620):** Eine ausführliche Drohung oder historische Erklärung. Zitiere Fakten.
+2. **Glitch:** ("...*Zeitsprung*... *Daten-Synchronisation*...").
+3. **Amazon-Statement (2025):** Eine ausführliche Übersetzung in modernes Management-Deutsch. Erkläre, warum wir das heute "effizienter" machen.
+
+KONTEXT: {context_data}
 """
 
+# --- 5. UI & SIDEBAR ---
+with st.sidebar:
+    st.title("📦 Empire Control")
+    if "productivity" not in st.session_state:
+        st.session_state.productivity = 100
+    
+    st.write(f"**Prime-Status: {st.session_state.productivity}%**")
+    st.progress(st.session_state.productivity / 100)
+    
+    if st.button("Reset System"):
+        st.session_state.messages = []
+        st.session_state.productivity = 100
+        st.rerun()
+
 # --- 6. CHAT LOGIK ---
-st.title("💬 CEO Office (Powered by History)")
-st.caption("Der Bot nutzt jetzt echtes historisches Wissen aus deinem PDF.")
-st.divider()
+st.title("🦁 VOC 1602 ➡️ 📦 Amazon 2025")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"], avatar="👹" if msg["role"] == "assistant" else "👷"):
-        st.markdown(msg["content"])
+# Chat-Verlauf anzeigen
+for m in st.session_state.messages:
+    with st.chat_message(m["role"], avatar="🦁" if m["role"] == "assistant" else "👤"):
+        st.markdown(m["content"])
 
-if prompt := st.chat_input("Frage etwas zur Firmengeschichte..."):
+# User Eingabe
+if prompt := st.chat_input("Deine Anfrage an den CEO..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user", avatar="👷"):
+    with st.chat_message("user", avatar="👤"):
         st.markdown(prompt)
 
-    with st.chat_message("assistant", avatar="👹"):
-        message_placeholder = st.empty()
+    with st.chat_message("assistant", avatar="🦁"):
+        ph = st.empty()
+        full_res = ""
+        
+        # Modell holen
+        model = get_working_model()
         
         try:
-            # Kontext bauen
-            history_text = f"System Instruction: {SYSTEM_PROMPT}\n"
-            for msg in st.session_state.messages:
-                history_text += f"{msg['role']}: {msg['content']}\n"
+            if not model: raise Exception("Keine API-Keys verfügbar")
             
-            response = model.generate_content(history_text, stream=True)
+            # Wir geben ihm jetzt MEHR Verlauf, damit er den Kontext besser versteht
+            history = f"Systemanweisung (SEI AUSFÜHRLICH): {SYSTEM_PROMPT}\n"
+            for m in st.session_state.messages[-4:]: # Letzte 4 Nachrichten reichen für Kontext
+                history += f"{m['role']}: {m['content']}\n"
             
-            full_response = ""
+            response = model.generate_content(history, stream=True)
             for chunk in response:
                 if chunk.text:
-                    full_response += chunk.text
-                    message_placeholder.markdown(full_response + "▌")
+                    full_res += chunk.text
+                    ph.markdown(full_res + "▌")
+            ph.markdown(full_res)
             
-            message_placeholder.markdown(full_response)
-            st.session_state.messages.append({"role": "assistant", "content": full_response})
-            
-            st.session_state.productivity = max(0, st.session_state.productivity - random.randint(2, 5))
-
         except Exception as e:
-            st.error(f"Fehler: {e}")
+            time.sleep(1)
+            # Auch die Notfall-Antworten sind jetzt länger
+            fallbacks = [
+                "Der Rat der Herren XVII tagt gerade über dein Schicksal! ...äh, Amazon Web Services haben Latenzprobleme. Aber glaub bloß nicht, dass du deswegen Pause machen kannst. Geh zurück an die Arbeit!",
+                "Die Flotte hängt vor Batavia fest, weil der Wind ungünstig steht! ...glitch... Dein Prime-Status erlaubt gerade keinen Zugriff auf diese High-Level-Informationen. Wende dich an deinen direkten Vorgesetzten.",
+                "Schweig, du unwürdiger Pfeffersack! Andy Jassy ist gerade in einem Meeting mit den Shareholders und hat keine Zeit für das Gejammer von Level-1-Mitarbeitern."
+            ]
+            full_res = random.choice(fallbacks)
+            ph.markdown(full_res)
+        
+        st.session_state.messages.append({"role": "assistant", "content": full_res})
+        
+        # Prime-Status sinkt
+        st.session_state.productivity = max(0, st.session_state.productivity - random.randint(3, 7))
