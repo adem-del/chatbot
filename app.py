@@ -2,152 +2,155 @@ import streamlit as st
 import google.generativeai as genai
 import time
 import random
+from pypdf import PdfReader
 
-# --- 1. SEITEN-CONFIG & DESIGN ---
-st.set_page_config(
-    page_title="HappyCorp Connect™",
-    page_icon="💼",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# --- 1. CONFIG & DESIGN ---
+st.set_page_config(page_title="VOC vs. Amazon", page_icon="📦", layout="wide")
 
-# --- 2. PROFESSIONAL CSS ---
 st.markdown("""
 <style>
-    .stApp { background-color: #0e1117; color: #fafafa; }
-    .stChatMessage { background-color: #262730; border-radius: 10px; padding: 10px; border: 1px solid #444; }
-    div[data-testid="stChatMessage"][data-author="user"] { background-color: #004a77; border: 1px solid #0077b6; }
-    div[data-testid="stChatMessage"][data-author="assistant"] { background-color: #3b1e1e; border: 1px solid #7f1d1d; }
-    section[data-testid="stSidebar"] { background-color: #111; border-right: 1px solid #333; }
+    .stApp { background-color: #0e1117; color: #e0e0e0; }
+    .stChatMessage { background-color: #262730; border: 1px solid #444; }
+    
+    /* Historisch (VOC) */
+    div[data-testid="stChatMessage"][data-author="assistant"] { 
+        background-color: #3e2723; 
+        border-color: #ff6f00; 
+        border-left: 5px solid #ff6f00;
+    }
+    
+    /* User */
+    div[data-testid="stChatMessage"][data-author="user"] { background-color: #0d47a1; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 3. SIDEBAR ---
+# --- 2. AUTHENTIFIZIERUNG ---
+api_key = None
+if "GOOGLE_API_KEY" in st.secrets:
+    api_key = st.secrets["GOOGLE_API_KEY"]
+else:
+    with st.sidebar:
+        api_key = st.text_input("Dein Google Key:", type="password")
+
+# --- 3. NOTFALL-SPRÜCHE (FALLBACK) ---
+# Falls Google abstürzt oder das Limit erreicht ist, nimmt er einen von diesen:
+FALLBACK_RESPONSES = [
+    "Das Gewürz-Lager ist leer! ...äh, buffering... Server-Überlastung. Geh zurück an die Arbeit!",
+    "Ich lasse dich auspeitschen! ...ping timeout... Dein Performance-Review wird verschoben.",
+    "Schweig, du unwürdiger Matrose! ...404 Error... Bitte wende dich an den HR-Chatbot.",
+    "Mehr Nelken für Amsterdam! ...sync error... Wir skalieren gerade unsere Cloud-Infrastruktur.",
+    "Du wagst es, den Gouverneur zu stören? ...low bandwidth... Deine Anfrage ist in der Warteschlange (Position 9999).",
+    "Ab in den Kerker mit dir! ...system update... Bitte installiere die neueste Version der App.",
+    "Wir brauchen mehr Sklaven für die Plantagen! ...glitch... Ich meine: Wir stellen neue Fulfillment Associates ein."
+]
+
+# --- 4. MODELL & PDF ---
+def get_model(key):
+    if not key: return None
+    try:
+        genai.configure(api_key=key)
+        # Wir erzwingen FLASH, das hat höhere Limits als Pro
+        return genai.GenerativeModel('gemini-1.5-flash')
+    except:
+        return None
+
+model = get_model(api_key)
+
+def load_history():
+    try:
+        reader = PdfReader("Informations,history.pdf.pdf") 
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text()
+        return text
+    except FileNotFoundError:
+        return None
+
+if "pdf_content" not in st.session_state:
+    st.session_state.pdf_content = load_history()
+
+# --- 5. SIDEBAR ---
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/3061/3061341.png", width=50)
-    st.title("HAPPYCORP OS")
-    st.caption("v.6.6.7 (Auto-Repair Build)")
+    st.title("HANDELS-IMPERIEN")
+    st.caption("1602 (VOC) ➡️ 2025 (Amazon)")
     
-    # API Key Feld
-    api_key = st.text_input("🔑 Google API Key", type="password")
-    st.caption("[Key hier gratis holen](https://aistudio.google.com/app/apikey)")
-    
+    if st.session_state.pdf_content:
+        st.success("Datenbank: ONLINE")
+    else:
+        st.warning("⚠️ PDF fehlt (Backup Modus)")
+
     st.markdown("---")
-    
-    # Dashboard
     if "productivity" not in st.session_state:
         st.session_state.productivity = 98
     
-    st.write("**Deine Produktivität:**")
+    st.write("**Prime-Status:**")
     st.progress(st.session_state.productivity / 100)
-    st.caption(f"Status: {st.session_state.productivity}%")
-
-# --- 4. VERBINDUNG & AUTO-MODELL-SUCHE ---
-if not api_key:
-    st.info("👋 Bitte logge dich links mit deinem Google API Key ein.")
-    st.stop()
-
-# Funktion, die automatisch ein funktionierendes Modell sucht
-def get_working_model(key):
-    genai.configure(api_key=key)
     
-    # Wir suchen nach Modellen, die Text generieren können
-    try:
-        available_models = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                available_models.append(m.name)
-        
-        # Bevorzugte Reihenfolge
-        priority_list = ["models/gemini-1.5-flash", "models/gemini-pro", "models/gemini-1.5-pro-latest"]
-        
-        selected_model_name = None
-        
-        # 1. Prüfen ob ein Favorit da ist
-        for priority in priority_list:
-            if priority in available_models:
-                selected_model_name = priority
-                break
-        
-        # 2. Wenn nicht, nimm irgendein Gemini Modell
-        if not selected_model_name:
-            for m in available_models:
-                if "gemini" in m:
-                    selected_model_name = m
-                    break
-        
-        # 3. Notfall: Nimm einfach das erste der Liste
-        if not selected_model_name and available_models:
-            selected_model_name = available_models[0]
+    if st.session_state.productivity < 30:
+        st.error("⚠️ KÜNDIGUNG EINGELEITET")
 
-        if selected_model_name:
-            # print(f"Benutze Modell: {selected_model_name}") # Für Debugging
-            return genai.GenerativeModel(selected_model_name)
-        else:
-            st.error("Kein passendes Modell gefunden. Prüfe deinen API Key.")
-            st.stop()
-            
-    except Exception as e:
-        st.error(f"Verbindungsfehler: {e}")
-        st.stop()
+# --- 6. PROMPT ---
+pdf_context = ""
+if st.session_state.pdf_content:
+    pdf_context = f"FAKTEN AUS PDF: {st.session_state.pdf_content[:20000]}"
 
-# Modell initialisieren (ruft die Such-Funktion auf)
-model = get_working_model(api_key)
+SYSTEM_PROMPT = f"""
+Du bist CEO (1620 VOC & 2025 Amazon).
+REGEL:
+1. Beginne als VOC-Gouverneur (brutal, Gewürze, Schiffe). Drohe dem User.
+2. Unterbrich dich ("...äh, Zeitfehler...").
+3. Wiederhole es als Amazon-Manager (Corporate Speak, Fulfillment, Effizienz).
 
-# --- 5. SYSTEM PROMPT ---
-SYSTEM_PROMPT = """
-Du bist 'Baron von Burnout', der CEO.
-1. Zuerst: Ein grausamer Fabrikbesitzer aus 1850 (Peitschen, Kohle, Hunger).
-2. Dann: Ein Unterbrecher ("...äh, räusper...", "...huch...").
-3. Zuletzt: Ein moderner, falscher Tech-CEO (Synergien, Obstkorb, Familie).
-Regel: Antworte kurz. Sei böse, dann falsch-freundlich.
+{pdf_context}
 """
 
-# --- 6. CHAT LOGIK ---
+# --- 7. CHAT LOGIK (MIT NOTFALL-NETZ) ---
+st.title("📦 Von Gewürzen zu Paketen")
+st.divider()
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-st.title("💬 CEO Office")
-st.divider()
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"], avatar="👑" if msg["role"] == "assistant" else "📦"):
+        st.markdown(msg["content"])
 
-# Verlauf anzeigen
-for message in st.session_state.messages:
-    with st.chat_message(message["role"], avatar="👹" if message["role"] == "assistant" else "👷"):
-        st.markdown(message["content"])
-
-# Eingabe
 if prompt := st.chat_input("Nachricht an den Boss..."):
-    # User Nachricht
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user", avatar="👷"):
+    with st.chat_message("user", avatar="📦"):
         st.markdown(prompt)
 
-    # Bot Antwort
-    with st.chat_message("assistant", avatar="👹"):
+    with st.chat_message("assistant", avatar="👑"):
         message_placeholder = st.empty()
-        with st.spinner("CEO denkt nach..."):
-            time.sleep(0.5)
+        full_response = ""
 
+        # HIER IST DER RETTUNGSANKER
         try:
-            # Kontext bauen
-            history_text = f"System Instruction: {SYSTEM_PROMPT}\n"
+            if not model: raise Exception("Kein Model")
+            
+            history_text = f"System: {SYSTEM_PROMPT}\n"
             for msg in st.session_state.messages:
                 history_text += f"{msg['role']}: {msg['content']}\n"
             
-            # Generieren
+            # Wir versuchen die echte KI
             response = model.generate_content(history_text, stream=True)
             
-            full_response = ""
             for chunk in response:
                 if chunk.text:
                     full_response += chunk.text
                     message_placeholder.markdown(full_response + "▌")
             
-            message_placeholder.markdown(full_response)
-            st.session_state.messages.append({"role": "assistant", "content": full_response})
-            
-            # Score senken
-            st.session_state.productivity = max(0, st.session_state.productivity - random.randint(2, 5))
-
         except Exception as e:
-            st.error(f"Fehler: {e}")
+            # WENN GOOGLE FEHLER MELDET (429 QUOTA), GEHEN WIR HIER REIN
+            # Wir tun so, als würde er "denken"
+            time.sleep(1) 
+            # Wir nehmen einen zufälligen Spruch aus der Liste oben
+            full_response = random.choice(FALLBACK_RESPONSES)
+            # Wir fügen noch einen Hinweis für dich hinzu (nur du siehst das quasi am Text)
+            full_response += " *(System: Offline-Modus aktiv)*"
+        
+        # Antwort anzeigen und speichern
+        message_placeholder.markdown(full_response)
+        st.session_state.messages.append({"role": "assistant", "content": full_response})
+        
+        st.session_state.productivity = max(0, st.session_state.productivity - random.randint(2, 6))
