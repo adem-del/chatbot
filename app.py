@@ -4,97 +4,170 @@ import time
 import random
 from pypdf import PdfReader
 
-# --- 1. SETUP & DESIGN ---
-st.set_page_config(page_title="VOC & Amazon Bot", page_icon="📦")
+# --- 1. CONFIG & DESIGN ---
+st.set_page_config(page_title="VOC vs. Amazon", page_icon="📦", layout="wide")
 
-# Schlichtes, dunkles Design
 st.markdown("""
 <style>
     .stApp { background-color: #0e1117; color: #e0e0e0; }
-    .stChatMessage { background-color: #262730; border-radius: 10px; }
+    .stChatMessage { background-color: #262730; border: 1px solid #444; }
+    
+    /* Historisch (VOC) */
+    div[data-testid="stChatMessage"][data-author="assistant"] { 
+        background-color: #3e2723; 
+        border-color: #ff6f00; 
+        border-left: 5px solid #ff6f00;
+    }
+    
+    /* User */
+    div[data-testid="stChatMessage"][data-author="user"] { background-color: #0d47a1; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. API KEY ---
-# Nutze hier deinen Key. Wenn du mehrere hast, ist das noch besser.
-api_key = st.secrets.get("GOOGLE_API_KEY") or "DEIN_API_KEY_HIER"
+# --- 2. MULTI-KEY SETUP (DEINE VERSICHERUNG) ---
 
-if not api_key or api_key == "DEIN_API_KEY_HIER":
-    st.warning("Bitte trage deinen API Key ein.")
-    st.stop()
+# Hier trägst du alle deine Keys ein. Er nimmt den ersten, der funktioniert.
+API_KEYS = [
+    # Key 1 (Dein Haupt-Key)
+    "HIER_KEY_NUMMER_1_REINKOPIEREN", 
+    
+    # Key 2 (Reserve, falls Key 1 leer ist)
+    "HIER_KEY_NUMMER_2_REINKOPIEREN",
+    
+    # Key 3 (Notfall)
+    "HIER_KEY_NUMMER_3_REINKOPIEREN"
+]
 
-genai.configure(api_key=api_key)
-model = genai.GenerativeModel('gemini-1.5-flash')
+# Wir schauen auch, ob in den Streamlit Secrets einer liegt und packen ihn dazu
+if "GOOGLE_API_KEY" in st.secrets:
+    API_KEYS.insert(0, st.secrets["GOOGLE_API_KEY"])
 
-# --- 3. PDF LADEN ---
-@st.cache_data
-def load_pdf():
+# --- 3. NOTFALL-SPRÜCHE (OFFLINE MODUS) ---
+FALLBACK_RESPONSES = [
+    "Das Gewürz-Lager ist leer! ...äh, buffering... Server-Überlastung.",
+    "Ich lasse dich auspeitschen! ...ping timeout... Dein Performance-Review wird verschoben.",
+    "Schweig, du unwürdiger Matrose! ...404 Error... Bitte wende dich an den HR-Chatbot.",
+    "Mehr Nelken für Amsterdam! ...sync error... Wir skalieren gerade unsere Cloud-Infrastruktur.",
+    "Du wagst es, den Gouverneur zu stören? ...low bandwidth... Deine Anfrage ist in der Warteschlange.",
+    "Ab in den Kerker mit dir! ...system update... Bitte installiere die neueste Version der App.",
+    "Wir brauchen mehr Sklaven! ...glitch... Ich meine: Wir stellen neue Fulfillment Associates ein."
+]
+
+# --- 4. INTELLIGENTE VERBINDUNG ---
+def get_working_model():
+    # Wir testen jeden Key in der Liste
+    for key in API_KEYS:
+        if "HIER_KEY" in key: continue # Überspringt die Platzhalter
+        
+        try:
+            genai.configure(api_key=key)
+            # Wir nehmen Flash, weil es schneller ist und höhere Limits hat
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            return model
+        except Exception:
+            continue # Wenn Key kaputt, nimm den nächsten
+            
+    return None # Wenn KEIN Key geht
+
+model = get_working_model()
+
+# --- 5. PDF LADEN ---
+def load_history():
     try:
-        reader = PdfReader("Informations,history.pdf.pdf")
+        reader = PdfReader("Informations,history.pdf.pdf") 
         text = ""
         for page in reader.pages:
             text += page.extract_text()
-        return text[:20000] # Wir nehmen genug Text für Wissen, aber nicht zu viel
-    except:
-        return "PDF-Inhalt konnte nicht geladen werden."
+        return text
+    except FileNotFoundError:
+        return None
 
-pdf_text = load_pdf()
+if "pdf_content" not in st.session_state:
+    st.session_state.pdf_content = load_history()
 
-# --- 4. SYSTEM PROMPT (Der Kern) ---
+# --- 6. SIDEBAR ---
+with st.sidebar:
+    st.title("HANDELS-IMPERIEN")
+    st.caption("1602 (VOC) ➡️ 2025 (Amazon)")
+    
+    if st.session_state.pdf_content:
+        st.success("Datenbank: ONLINE")
+    else:
+        st.warning("⚠️ PDF fehlt (Backup Modus)")
+
+    st.markdown("---")
+    
+    # Status Anzeige
+    if model:
+        st.success("🟢 KI-Verbindung: Stabil")
+    else:
+        st.error("🔴 KI-Verbindung: Offline (Notfall-Modus)")
+
+    if "productivity" not in st.session_state:
+        st.session_state.productivity = 98
+    
+    st.write("**Prime-Status:**")
+    st.progress(st.session_state.productivity / 100)
+    
+    if st.session_state.productivity < 30:
+        st.error("⚠️ KÜNDIGUNG EINGELEITET")
+
+# --- 7. PROMPT ---
+pdf_context = ""
+if st.session_state.pdf_content:
+    pdf_context = f"FAKTEN AUS PDF: {st.session_state.pdf_content[:25000]}"
+
 SYSTEM_PROMPT = f"""
-Du bist ein hybrider CEO. 
-Zuerst antwortest du als Jan Pieterszoon Coen (Gouverneur der VOC, 1620). Sei brutal, herrisch und rede von Gewürzen und Monopolen.
-Dann kommt ein kurzer Glitch (z.B. "...*funkstörung*...").
-Dann antwortest du als Andy Jassy (CEO von Amazon, 2025). Sei passiv-aggressiv, nutze Business-Englisch und rede von Effizienz.
+Du bist CEO (1620 VOC & 2025 Amazon).
+REGEL:
+1. Beginne als VOC-Gouverneur (brutal, Gewürze, Schiffe). Drohe dem User.
+2. Unterbrich dich ("...äh, Zeitfehler...").
+3. Wiederhole es als Amazon-Manager (Corporate Speak, Fulfillment, Effizienz).
 
-Nutze dieses Wissen aus deinem Firmen-Archiv:
-{pdf_text}
+{pdf_context}
 """
 
-# --- 5. CHAT SESSION ---
+# --- 8. CHAT LOGIK ---
+st.title("📦 Von Gewürzen zu Paketen")
+st.divider()
+
 if "messages" not in st.session_state:
     st.session_state.messages = []
-if "productivity" not in st.session_state:
-    st.session_state.productivity = 100
 
-# Sidebar für den Status
-with st.sidebar:
-    st.title("Company Status")
-    st.write(f"**Prime-Status:** {st.session_state.productivity}%")
-    st.progress(st.session_state.productivity / 100)
-    if st.button("Reset Chat"):
-        st.session_state.messages = []
-        st.session_state.productivity = 100
-        st.rerun()
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"], avatar="👑" if msg["role"] == "assistant" else "📦"):
+        st.markdown(msg["content"])
 
-# Verlauf anzeigen
-for message in st.session_state.messages:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
-
-# --- 6. CHAT EINGABE ---
-if prompt := st.chat_input("Befehl an den CEO..."):
-    # User Nachricht
+if prompt := st.chat_input("Nachricht an den Boss..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user"):
+    with st.chat_message("user", avatar="📦"):
         st.markdown(prompt)
 
-    # Bot Antwort
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar="👑"):
+        message_placeholder = st.empty()
+        full_response = ""
+
         try:
-            # Wir senden den System Prompt und den Verlauf
-            full_prompt = f"{SYSTEM_PROMPT}\n\nVerlauf:\n"
-            for m in st.session_state.messages[-5:]: # Nur die letzten 5 für Speed
-                full_prompt += f"{m['role']}: {m['content']}\n"
+            if not model: raise Exception("Kein Model")
             
-            response = model.generate_content(full_prompt)
-            answer = response.text
+            history_text = f"System: {SYSTEM_PROMPT}\n"
+            for msg in st.session_state.messages:
+                history_text += f"{msg['role']}: {msg['content']}\n"
             
-            st.markdown(answer)
-            st.session_state.messages.append({"role": "assistant", "content": answer})
-            
-            # Produktivität sinkt leicht
-            st.session_state.productivity = max(0, st.session_state.productivity - random.randint(2, 5))
+            # Streaming Versuch
+            response = model.generate_content(history_text, stream=True)
+            for chunk in response:
+                if chunk.text:
+                    full_response += chunk.text
+                    message_placeholder.markdown(full_response + "▌")
             
         except Exception as e:
-            st.error("Der CEO ist überlastet (Limit erreicht). Bitte kurz warten.")
+            # FALLBACK WENN ALLE KEYS VERSAGEN ODER LIMIT ERREICHT
+            time.sleep(0.8) 
+            full_response = random.choice(FALLBACK_RESPONSES)
+            full_response += " *(System: Offline-Modus)*"
+        
+        message_placeholder.markdown(full_response)
+        st.session_state.messages.append({"role": "assistant", "content": full_response})
+        
+        st.session_state.productivity = max(0, st.session_state.productivity - random.randint(2, 6))
