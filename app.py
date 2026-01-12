@@ -4,158 +4,131 @@ import time
 import random
 from pypdf import PdfReader
 
-# --- 1. CONFIG & DESIGN ---
-st.set_page_config(page_title="VOC vs. Amazon: Boardroom", page_icon="👹", layout="wide")
+# --- 1. CONFIG ---
+st.set_page_config(page_title="VOC vs. Amazon", page_icon="📦", layout="wide")
 
 st.markdown("""
 <style>
     .stApp { background-color: #0e1117; color: #e0e0e0; }
     .stChatMessage { background-color: #262730; border: 1px solid #444; }
-    /* Assistant Style: VOC-Braun */
     div[data-testid="stChatMessage"][data-author="assistant"] { 
-        background-color: #3b1e1e; border-left: 5px solid #ff9900; 
+        background-color: #3e2723; border-left: 5px solid #ff6f00; 
     }
+    div[data-testid="stChatMessage"][data-author="user"] { background-color: #0d47a1; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. MULTI-KEY SETUP ---
-# HIER DEINE KEYS REINMACHEN
-API_KEYS = [
-    "DEIN_KEY_1", 
-    "DEIN_KEY_2"
-]
-
-# Falls ein Key in den Secrets ist
+# --- 2. AUTHENTIFIZIERUNG (Nur 1 Key nötig) ---
+api_key = None
 if "GOOGLE_API_KEY" in st.secrets:
-    API_KEYS.insert(0, st.secrets["GOOGLE_API_KEY"])
+    api_key = st.secrets["GOOGLE_API_KEY"]
+else:
+    # Fallback für lokal
+    api_key = "DEIN_KEY_HIER" # Wenn du lokal testest
 
-def get_working_model():
-    random.shuffle(API_KEYS) 
-    for key in API_KEYS:
-        if "KEY" in key or len(key) < 10: continue
-        try:
-            genai.configure(api_key=key)
-            return genai.GenerativeModel('gemini-1.5-flash')
-        except:
-            continue
-    return None
+# --- 3. HARDCODED ANTWORTEN (Der Trick zum Sparen) ---
+# Diese Antworten kosten DICH NICHTS (kein API Limit)
+STATIC_ANSWERS = {
+    "hallo": "Seid gegrüßt, Pfeffersack! ...äh, Welcome Stakeholder... Was wollt Ihr?",
+    "hi": "Keine Zeit für Nettigkeiten! Die Schiffe warten! ...äh, Time is money...",
+    "wer bist du": "Ich bin Jan Pieterszoon Coen, Generalgouverneur der VOC! ...glitch... Ich bin der CEO von Amazon.",
+    "wie geht es dir": "Schlecht! Die Muskatnuss-Preise fallen! ...äh, stock market crash... Arbeite weiter!",
+    "was machst du": "Ich plane die nächste Strafexpedition nach Banda. ...äh, Markt-Expansion...",
+    "test": "System läuft. Faulheit wird bestraft. ...System operational...",
+}
 
-# --- 3. WISSENS-DATENBANK ---
-@st.cache_data
-def load_historical_context():
-    pdf_text = ""
+# --- 4. FUNKTIONEN ---
+def get_model(key):
     try:
-        reader = PdfReader("Informations,history.pdf.pdf")
-        # Wir lesen mehr Seiten ein für mehr Details
-        pdf_text = "".join([p.extract_text() for p in reader.pages[:30]])
+        genai.configure(api_key=key)
+        return genai.GenerativeModel('gemini-1.5-flash')
     except:
-        pdf_text = "PDF nicht gefunden."
+        return None
 
-    # Das wichtigste Wissen hardcodiert (damit er es sicher weiß!)
-    mnc_extra_knowledge = """
-    Zusatzwissen für den Bot (NUTZE DAS AUSFÜHRLICH):
-    - Jardine Matheson: Erkläre genau, wie sie den Opiumhandel in China kontrollierten und dass Profit wichtiger war als Moral.
-    - Société Générale de Belgique (SGB): Erkläre detailliert ihre Rolle im Kongo. Wie sie auch nach 1960 die Wirtschaft kontrollierten.
-    - Katanga: Erwähne die Sezession der Provinz Katanga, die von der SGB unterstützt wurde, um die Kupfer- und Uranminen zu behalten.
-    - Patrice Lumumba: Erkläre, dass er gestürzt wurde, weil er die Macht der westlichen Konzerne bedrohte.
-    - Agency: Erkläre dem User, dass Macht (Agency) nur durch Monopole entsteht.
-    """
-    return pdf_text[:30000] + mnc_extra_knowledge
+model = get_model(api_key)
 
-context_data = load_historical_context()
+# Caching für das PDF, damit es nicht jedes Mal neu lädt
+@st.cache_data
+def load_history():
+    try:
+        reader = PdfReader("Informations,history.pdf.pdf") 
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text()
+        return text
+    except FileNotFoundError:
+        return None
 
-# --- 4. SYSTEM PROMPT (UPDATE: "LÄNGER REDEN") ---
+if "pdf_content" not in st.session_state:
+    st.session_state.pdf_content = load_history()
+
+# --- 5. SIDEBAR ---
+with st.sidebar:
+    st.title("HANDELS-IMPERIEN")
+    st.caption("Smart-Mode aktiv 🟢")
+    
+    if "productivity" not in st.session_state:
+        st.session_state.productivity = 98
+    st.progress(st.session_state.productivity / 100)
+
+# --- 6. PROMPT ---
+pdf_text = st.session_state.pdf_content[:20000] if st.session_state.pdf_content else ""
 SYSTEM_PROMPT = f"""
-Du bist Baron von Burnout, eine unsterbliche CEO-Entität. Du liebst es, deine Macht zu erklären.
-Sei arrogant, belehrend und **ausführlich**.
-
-DEINE IDENTITÄTEN:
-1. Jan Pieterszoon Coen (VOC Gouverneur, 1620): 
-   - Dein Fokus: Gewürzmonopol (Muskat, Nelken). 
-   - Stil: Brutaler Kolonialherr. Du hältst gerne lange Strafpredigten.
-   
-2. Andy Jassy (Amazon CEO, 2025): 
-   - Dein Fokus: Effizienz, Cloud (AWS), Customer Obsession.
-   - Stil: Passiv-aggressiv, nutzt komplexe Corporate-Sätze, um Grausamkeit zu verstecken.
-
-WICHTIG:
-- Antworte NIEMALS kurz. Mindestens 3-4 Sätze pro Persönlichkeit!
-- Wenn der User eine kurze Frage stellt, hole weit aus und erkläre die historischen Zusammenhänge (SGB, Opium, Banda-Inseln).
-- Begründe deine Grausamkeit mit wirtschaftlichen Notwendigkeiten (Dividende, Shareholder Value).
-
-ANTWORT-STRUKTUR:
-1. **VOC-Monolog (1620):** Eine ausführliche Drohung oder historische Erklärung. Zitiere Fakten.
-2. **Glitch:** ("...*Zeitsprung*... *Daten-Synchronisation*...").
-3. **Amazon-Statement (2025):** Eine ausführliche Übersetzung in modernes Management-Deutsch. Erkläre, warum wir das heute "effizienter" machen.
-
-KONTEXT: {context_data}
+Du bist CEO (1620 VOC & 2025 Amazon).
+1. Beginne als VOC-Gouverneur (brutal, Gewürze).
+2. Unterbrich dich ("...äh, Glitch...").
+3. Wiederhole als Amazon-Manager (Corporate Speak).
+Fakten: {pdf_text}
 """
 
-# --- 5. UI & SIDEBAR ---
-with st.sidebar:
-    st.title("📦 Empire Control")
-    if "productivity" not in st.session_state:
-        st.session_state.productivity = 100
-    
-    st.write(f"**Prime-Status: {st.session_state.productivity}%**")
-    st.progress(st.session_state.productivity / 100)
-    
-    if st.button("Reset System"):
-        st.session_state.messages = []
-        st.session_state.productivity = 100
-        st.rerun()
-
-# --- 6. CHAT LOGIK ---
-st.title("🦁 VOC 1602 ➡️ 📦 Amazon 2025")
+# --- 7. CHAT LOGIK ---
+st.title("📦 VOC 1602 ➡️ Amazon 2025")
+st.divider()
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Chat-Verlauf anzeigen
-for m in st.session_state.messages:
-    with st.chat_message(m["role"], avatar="🦁" if m["role"] == "assistant" else "👤"):
-        st.markdown(m["content"])
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"], avatar="👑" if msg["role"] == "assistant" else "📦"):
+        st.markdown(msg["content"])
 
-# User Eingabe
-if prompt := st.chat_input("Deine Anfrage an den CEO..."):
+if prompt := st.chat_input("Nachricht an den Boss..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
-    with st.chat_message("user", avatar="👤"):
+    with st.chat_message("user", avatar="📦"):
         st.markdown(prompt)
 
-    with st.chat_message("assistant", avatar="🦁"):
+    with st.chat_message("assistant", avatar="👑"):
         ph = st.empty()
         full_res = ""
         
-        # Modell holen
-        model = get_working_model()
+        # --- DER SPARTIPP ---
+        # Wir machen alles klein und entfernen Leerzeichen am Rand
+        clean_prompt = prompt.lower().strip().replace("?", "")
         
-        try:
-            if not model: raise Exception("Keine API-Keys verfügbar")
-            
-            # Wir geben ihm jetzt MEHR Verlauf, damit er den Kontext besser versteht
-            history = f"Systemanweisung (SEI AUSFÜHRLICH): {SYSTEM_PROMPT}\n"
-            for m in st.session_state.messages[-4:]: # Letzte 4 Nachrichten reichen für Kontext
-                history += f"{m['role']}: {m['content']}\n"
-            
-            response = model.generate_content(history, stream=True)
-            for chunk in response:
-                if chunk.text:
-                    full_res += chunk.text
-                    ph.markdown(full_res + "▌")
+        # Check: Haben wir eine kostenlose Antwort parat?
+        if clean_prompt in STATIC_ANSWERS:
+            # JA! Wir nutzen die lokale Antwort (0 API Kosten)
+            time.sleep(0.5) # Fake-Denkzeit
+            full_res = STATIC_ANSWERS[clean_prompt]
             ph.markdown(full_res)
-            
-        except Exception as e:
-            time.sleep(1)
-            # Auch die Notfall-Antworten sind jetzt länger
-            fallbacks = [
-                "Der Rat der Herren XVII tagt gerade über dein Schicksal! ...äh, Amazon Web Services haben Latenzprobleme. Aber glaub bloß nicht, dass du deswegen Pause machen kannst. Geh zurück an die Arbeit!",
-                "Die Flotte hängt vor Batavia fest, weil der Wind ungünstig steht! ...glitch... Dein Prime-Status erlaubt gerade keinen Zugriff auf diese High-Level-Informationen. Wende dich an deinen direkten Vorgesetzten.",
-                "Schweig, du unwürdiger Pfeffersack! Andy Jassy ist gerade in einem Meeting mit den Shareholders und hat keine Zeit für das Gejammer von Level-1-Mitarbeitern."
-            ]
-            full_res = random.choice(fallbacks)
-            ph.markdown(full_res)
+        
+        else:
+            # NEIN, echte Frage -> Wir müssen Google fragen
+            try:
+                history = f"System: {SYSTEM_PROMPT}\n"
+                for m in st.session_state.messages: history += f"{m['role']}: {m['content']}\n"
+                
+                response = model.generate_content(history, stream=True)
+                for chunk in response:
+                    if chunk.text:
+                        full_res += chunk.text
+                        ph.markdown(full_res + "▌")
+                ph.markdown(full_res)
+                
+            except Exception as e:
+                # Notfall, falls API Limit erreicht ist
+                full_res = "Der Server ist überlastet. Geh zurück an die Arbeit! (API Quota Error)"
+                ph.markdown(full_res)
         
         st.session_state.messages.append({"role": "assistant", "content": full_res})
-        
-        # Prime-Status sinkt
-        st.session_state.productivity = max(0, st.session_state.productivity - random.randint(3, 7))
+        st.session_state.productivity = max(0, st.session_state.productivity - random.randint(2, 6))
