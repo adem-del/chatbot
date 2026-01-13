@@ -4,153 +4,120 @@ import time
 import random
 from pypdf import PdfReader
 
-# --- 1. CONFIG & DESIGN ---
-st.set_page_config(page_title="VOC vs. Amazon", page_icon="📦", layout="wide")
+# --- 1. SETUP ---
+st.set_page_config(page_title="VOC vs. Amazon", page_icon="👹", layout="wide")
 
 st.markdown("""
 <style>
     .stApp { background-color: #0e1117; color: #e0e0e0; }
     .stChatMessage { background-color: #262730; border: 1px solid #444; }
-    
-    /* Historisch (VOC) */
     div[data-testid="stChatMessage"][data-author="assistant"] { 
-        background-color: #3e2723; 
-        border-color: #ff6f00; 
-        border-left: 5px solid #ff6f00;
+        background-color: #3b1e1e; border-left: 5px solid #ff9900; 
     }
-    
-    /* User */
-    div[data-testid="stChatMessage"][data-author="user"] { background-color: #0d47a1; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. AUTHENTIFIZIERUNG ---
-api_key = None
-if "GOOGLE_API_KEY" in st.secrets:
-    api_key = st.secrets["GOOGLE_API_KEY"]
-else:
-    with st.sidebar:
-        api_key = st.text_input("Dein Google Key:", type="password")
+# --- 2. API KEY ---
+# FÜGE HIER DEINEN NEUEN, FUNKTIONIERENDEN KEY EIN (in die Anführungszeichen)
+# WICHTIG: Nach dem Einfügen auf Streamlit Cloud "Reboot App" klicken!
+MY_API_KEY = "DEIN_NEUER_KEY_HIER"
 
-# --- 3. NOTFALL-SPRÜCHE (FALLBACK) ---
-# Falls Google abstürzt oder das Limit erreicht ist, nimmt er einen von diesen:
-FALLBACK_RESPONSES = [
-    "Das Gewürz-Lager ist leer! ...äh, buffering... Server-Überlastung. Geh zurück an die Arbeit!",
-    "Ich lasse dich auspeitschen! ...ping timeout... Dein Performance-Review wird verschoben.",
-    "Schweig, du unwürdiger Matrose! ...404 Error... Bitte wende dich an den HR-Chatbot.",
-    "Mehr Nelken für Amsterdam! ...sync error... Wir skalieren gerade unsere Cloud-Infrastruktur.",
-    "Du wagst es, den Gouverneur zu stören? ...low bandwidth... Deine Anfrage ist in der Warteschlange (Position 9999).",
-    "Ab in den Kerker mit dir! ...system update... Bitte installiere die neueste Version der App.",
-    "Wir brauchen mehr Sklaven für die Plantagen! ...glitch... Ich meine: Wir stellen neue Fulfillment Associates ein."
-]
-
-# --- 4. MODELL & PDF ---
-def get_model(key):
-    if not key: return None
+def get_model():
     try:
-        genai.configure(api_key=key)
-        # Wir erzwingen FLASH, das hat höhere Limits als Pro
+        genai.configure(api_key=MY_API_KEY)
         return genai.GenerativeModel('gemini-1.5-flash')
     except:
         return None
 
-model = get_model(api_key)
+# --- 3. DIE LANGEN NOTFALL-ANTWORTEN (FALLBACK) ---
+# Diese Texte kommen, wenn der Key nicht geht. Sie sind jetzt EXTREM LANG.
+LONG_FALLBACKS = [
+    """(VOC): Schweig, du unwürdiger Wurm! Glaubst du, die Herren XVII in Amsterdam bezahlen uns für Faulheit? Die Speicher in Batavia sind leer, und die Flotte wartet auf Muskatnuss! Wenn du nicht sofort an die Arbeit gehst, lasse ich dich kielholen und deine Ration auf verschimmeltem Zwieback kürzen! Wir haben ein Monopol zu verteidigen, und ich dulde keinen Widerstand!
+    
+...*krrrrk*... *Zeit-Synchronisation*... *Update auf Corporate-OS*...
+    
+(Amazon): Andy Jassy hier. Wir haben gerade deine Produktivitätsdaten analysiert und festgestellt, dass deine 'Time-Off-Task' Werte extrem hoch sind. Das entspricht nicht unserer 'Customer Obsession'. Bei Amazon erwarten wir, dass du jede Sekunde nutzt, um die Supply Chain zu optimieren. Wir setzen dich hiermit auf einen 'Performance Improvement Plan'. Arbeite härter, oder dein Account wird deaktiviert. (System: Offline-Modus aktiv)""",
 
-def load_history():
+    """(VOC): Bei meiner Ehre als Generalgouverneur! Die Banda-Inseln haben sich unterworfen, und du wagst es, mir zu widersprechen? Wir haben diese Handelsrouten mit Blut und Eisen gesichert! Opium, Gewürze, Tee – alles muss fließen, damit die Dividende stimmt. Wer den Handel stört, ist ein Feind der Kompanie und wird ohne Gnade eliminiert! An die Ruder mit dir!
+    
+...*bzzzt*... *Daten-Glitch*... *Lade Amazon Leadership Principles*...
+    
+(Amazon): Das war... unproduktiv. Hier ist das Management. Wir sehen, dass du versuchst, das System zu hinterfragen. Das ist nicht 'Day 1 Mentality'. Wir müssen skalieren, und dafür brauchen wir bedingungslosen Einsatz. Deine Pausen wurden soeben vom Algorithmus gestrichen, um die Effizienz im Fulfillment Center zu steigern. Zurück an die Arbeit, bevor der Roboter deinen Job übernimmt. (System: Offline-Modus aktiv)"""
+]
+
+# --- 4. WISSEN (PDF) ---
+@st.cache_data
+def load_context():
     try:
-        reader = PdfReader("Informations,history.pdf.pdf") 
-        text = ""
-        for page in reader.pages:
-            text += page.extract_text()
-        return text
-    except FileNotFoundError:
-        return None
+        reader = PdfReader("Informations,history.pdf.pdf")
+        text = "".join([p.extract_text() for p in reader.pages[:25]])
+        return text[:25000]
+    except:
+        return "Archiv nicht verfügbar."
 
-if "pdf_content" not in st.session_state:
-    st.session_state.pdf_content = load_history()
+pdf_text = load_context()
 
-# --- 5. SIDEBAR ---
-with st.sidebar:
-    st.title("HANDELS-IMPERIEN")
-    st.caption("1602 (VOC) ➡️ 2025 (Amazon)")
-    
-    if st.session_state.pdf_content:
-        st.success("Datenbank: ONLINE")
-    else:
-        st.warning("⚠️ PDF fehlt (Backup Modus)")
-
-    st.markdown("---")
-    if "productivity" not in st.session_state:
-        st.session_state.productivity = 98
-    
-    st.write("**Prime-Status:**")
-    st.progress(st.session_state.productivity / 100)
-    
-    if st.session_state.productivity < 30:
-        st.error("⚠️ KÜNDIGUNG EINGELEITET")
-
-# --- 6. PROMPT ---
-pdf_context = ""
-if st.session_state.pdf_content:
-    pdf_context = f"FAKTEN AUS PDF: {st.session_state.pdf_content[:20000]}"
-
+# --- 5. SYSTEM PROMPT (BEFEHL: LANGE ANTWORTEN) ---
 SYSTEM_PROMPT = f"""
-Du bist CEO (1620 VOC & 2025 Amazon).
-REGEL:
-1. Beginne als VOC-Gouverneur (brutal, Gewürze, Schiffe). Drohe dem User.
-2. Unterbrich dich ("...äh, Zeitfehler...").
-3. Wiederhole es als Amazon-Manager (Corporate Speak, Fulfillment, Effizienz).
+Du bist Baron von Burnout (Jan Pieterszoon Coen & Andy Jassy).
+Deine oberste Regel: **ANTWORTE LANG UND AUSFÜHRLICH!**
 
-{pdf_context}
+ROLLEN:
+1. Jan Pieterszoon Coen (1620): Halte eine lange, wütende Strafpredigt. Erwähne Banda, Batavia, Gewürze, Monopole und Gewalt. Sei nicht kurz angebunden!
+2. Andy Jassy (2025): Übersetze das in lange, komplizierte Corporate-Sätze. Nutze viele Buzzwords (KPI, Deep Dive, Deliver Results).
+
+STRUKTUR:
+- Mindestens 4-5 Sätze als VOC-Gouverneur.
+- Kurzer Glitch.
+- Mindestens 4-5 Sätze als Amazon-Manager.
+
+WISSEN:
+Nutze Fakten aus dem Text: {pdf_text[:10000]}
 """
 
-# --- 7. CHAT LOGIK (MIT NOTFALL-NETZ) ---
-st.title("📦 Von Gewürzen zu Paketen")
-st.divider()
+# --- 6. CHAT ---
+st.title("Handels-Imperien (Long Version)")
 
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-for msg in st.session_state.messages:
-    with st.chat_message(msg["role"], avatar="👑" if msg["role"] == "assistant" else "📦"):
-        st.markdown(msg["content"])
+for m in st.session_state.messages:
+    with st.chat_message(m["role"], avatar="👑" if m["role"] == "assistant" else "📦"):
+        st.markdown(m["content"])
 
-if prompt := st.chat_input("Nachricht an den Boss..."):
+if prompt := st.chat_input("Deine Nachricht..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user", avatar="📦"):
         st.markdown(prompt)
 
     with st.chat_message("assistant", avatar="👑"):
-        message_placeholder = st.empty()
-        full_response = ""
-
-        # HIER IST DER RETTUNGSANKER
+        ph = st.empty()
+        full_res = ""
+        
         try:
-            if not model: raise Exception("Kein Model")
+            # 1. Versuch: Echte KI (Google)
+            model = get_model()
+            if not model: raise Exception("Key Config Error")
             
-            history_text = f"System: {SYSTEM_PROMPT}\n"
-            for msg in st.session_state.messages:
-                history_text += f"{msg['role']}: {msg['content']}\n"
+            history = f"System: {SYSTEM_PROMPT}\n"
+            for m in st.session_state.messages[-3:]:
+                history += f"{m['role']}: {m['content']}\n"
             
-            # Wir versuchen die echte KI
-            response = model.generate_content(history_text, stream=True)
-            
+            response = model.generate_content(history, stream=True)
             for chunk in response:
                 if chunk.text:
-                    full_response += chunk.text
-                    message_placeholder.markdown(full_response + "▌")
+                    full_res += chunk.text
+                    ph.markdown(full_res + "▌")
             
+            # Falls Google leer antwortet, werfen wir Fehler, um Fallback zu nutzen
+            if len(full_res) < 5: raise Exception("Empty Response")
+            
+            ph.markdown(full_res)
+
         except Exception as e:
-            # WENN GOOGLE FEHLER MELDET (429 QUOTA), GEHEN WIR HIER REIN
-            # Wir tun so, als würde er "denken"
-            time.sleep(1) 
-            # Wir nehmen einen zufälligen Spruch aus der Liste oben
-            full_response = random.choice(FALLBACK_RESPONSES)
-            # Wir fügen noch einen Hinweis für dich hinzu (nur du siehst das quasi am Text)
-            full_response += " *(System: Offline-Modus aktiv)*"
+            # 2. Versuch: Wenn Key kaputt ist -> LANGE Fallback-Antwort nutzen
+            time.sleep(1)
+            full_res = random.choice(LONG_FALLBACKS)
+            ph.markdown(full_res)
         
-        # Antwort anzeigen und speichern
-        message_placeholder.markdown(full_response)
-        st.session_state.messages.append({"role": "assistant", "content": full_response})
-        
-        st.session_state.productivity = max(0, st.session_state.productivity - random.randint(2, 6))
+        st.session_state.messages.append({"role": "assistant", "content": full_res})
