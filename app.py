@@ -98,3 +98,6 @@ if prompt := st.chat_input("Ihre Anfrage an die Konzernleitung..."):
 
         ph.markdown(full_res)
         st.session_state.messages.append({"role": "assistant", "content": full_res})
+# TEST-ZEILE: Lösche sie nach dem Test wieder!
+st.write(f"Key geladen: {api_key[:5]}***" if api_key else "KEIN KEY GEFUNDEN")
+
