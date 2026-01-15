@@ -4,7 +4,7 @@ import time
 import random
 from pypdf import PdfReader
 
-# --- 1. CONFIG & DESIGN ---
+
 st.set_page_config(page_title="VOC vs. Amazon", page_icon="📦", layout="wide")
 
 st.markdown("""
@@ -24,7 +24,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 2. AUTHENTIFIZIERUNG ---
+# AUTHENTIFIZI
 api_key = None
 if "GOOGLE_API_KEY" in st.secrets:
     api_key = st.secrets["GOOGLE_API_KEY"]
@@ -36,13 +36,13 @@ if not api_key:
     st.info("Bitte Key eingeben.")
     st.stop()
 
-# Intelligente Modell-Suche
+# 
 def get_working_model(key):
     try:
         genai.configure(api_key=key)
         all_models = [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
         
-        # Wir bevorzugen Flash (schnell) oder Pro
+        
         for m in all_models:
             if "flash" in m: return genai.GenerativeModel(m)
         for m in all_models:
@@ -55,10 +55,10 @@ def get_working_model(key):
 
 model = get_working_model(api_key)
 
-# --- 3. DAS PDF LADEN ---
+
 def load_history():
     try:
-        # Hier muss dein exakter Dateiname stehen!
+        
         reader = PdfReader("Informations,history.pdf.pdf") 
         text = ""
         for page in reader.pages:
@@ -70,7 +70,7 @@ def load_history():
 if "pdf_content" not in st.session_state:
     st.session_state.pdf_content = load_history()
 
-# --- 4. SIDEBAR ---
+# sidebar
 with st.sidebar:
     # Logo-Mix: VOC Schiff trifft Paket
     st.title("HANDELS-IMPERIEN")
@@ -168,6 +168,7 @@ if prompt := st.chat_input("Beschwere dich über deine Arbeitsbedingungen..."):
 
         except Exception as e:
             st.error(f"Fehler: {e}")
+
 
 
 
